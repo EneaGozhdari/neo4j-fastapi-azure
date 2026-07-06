@@ -1,0 +1,87 @@
+# Azure DevOps pipeline: build the API image, push it to ACR, and roll it out
+# to the API Azure Container App. Source lives on GitHub; this pipeline runs in
+# Azure DevOps.
+#
+# PREREQUISITES (configured once in Azure DevOps > Project Settings):
+#   1. Service connections:
+#        - GitHub connection so Azure DevOps can read this repo and trigger on push.
+#        - "$(dockerRegistryServiceConnection)" — Docker Registry connection to the
+#             ACR (type: Docker Registry -> Azure Container Registry).
+#        - "$(azureServiceConnection)" — Azure Resource Manager connection with
+#             Contributor on the resource group (used to update the Container App).
+#   2. Variable group "neo4j-fastapi-vars" (Pipelines > Library) providing:
+#        acrLoginServer     e.g. acrneo4jfastapi.azurecr.io
+#        imageRepository    e.g. neo4j-fastapi-api
+#        resourceGroup      e.g. rg-neo4j-fastapi
+#        containerAppName   e.g. neo4japi-api
+#      Mark any sensitive values as secret. No secrets are hard-coded in this file.
+#
+# The image is tagged with the build id (unique + traceable) as well as "latest",
+# so a bad rollout can be reverted by pinning a previous build id.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - app/**
+      - pipelines/azure-pipelines.yml
+
+variables:
+  - group: neo4j-fastapi-vars
+  - name: dockerRegistryServiceConnection
+    value: "acr-service-connection"
+  - name: azureServiceConnection
+    value: "azure-service-connection"
+  - name: tag
+    value: "$(Build.BuildId)"
+  - name: vmImage
+    value: "ubuntu-latest"
+
+stages:
+  - stage: Build
+    displayName: Build and push image
+    jobs:
+      - job: build_push
+        displayName: Build and push to ACR
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - task: Docker@2
+            displayName: Build and push API image
+            inputs:
+              command: buildAndPush
+              containerRegistry: $(dockerRegistryServiceConnection)
+              repository: $(imageRepository)
+              dockerfile: app/Dockerfile
+              buildContext: app
+              tags: |
+                $(tag)
+                latest
+
+  - stage: Deploy
+    displayName: Deploy to Container Apps
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: deploy_api
+        displayName: Update API container app
+        pool:
+          vmImage: $(vmImage)
+        environment: production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: Roll out new image to Container App
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name "$(containerAppName)" \
+                        --resource-group "$(resourceGroup)" \
+                        --image "$(acrLoginServer)/$(imageRepository):$(tag)"
