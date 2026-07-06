@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars and fill in real values.
+# terraform.tfvars is git-ignored — do NOT commit real secrets.
+
+subscription_id     = "00000000-0000-0000-0000-000000000000"
+location            = "westeurope"
+prefix              = "neo4japi"
+resource_group_name = "rg-neo4j-fastapi"
+acr_name            = "acrneo4jfastapiexample" # must be globally unique
+api_image_name      = "neo4j-fastapi-api"
+image_tag           = "latest"
+neo4j_user          = "neo4j"
+neo4j_password      = "replace-with-a-strong-password"
