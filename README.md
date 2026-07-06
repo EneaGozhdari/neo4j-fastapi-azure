@@ -223,6 +223,22 @@ service connections, not the YAML.
 - ✅ Azure DevOps pipeline YAML — valid, parameterised, no hard-coded secrets.
 - ✅ No secrets committed; `.env` and `*.tfvars` are git-ignored.
 
+### Proof of local run (`screenshots/`)
+
+FastAPI Swagger UI (`http://localhost:8000/docs`):
+
+![Swagger UI](screenshots/01-api-swagger.png)
+
+`GET /health` and `GET /data`:
+
+![health endpoint](screenshots/02-health.png)
+![data endpoint](screenshots/03-data.png)
+
+Neo4j Browser — the single seeded `SeedData` node, reached over Bolt (graph + result table):
+
+![Neo4j graph view](screenshots/04-neo4j-graph.png)
+![Neo4j table view](screenshots/05-neo4j-table.png)
+
 ## 9. What is incomplete / not done (honest)
 
 - ❌ **No live Azure deployment.** Terraform is authored + validated but never `apply`-ed (no
