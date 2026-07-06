@@ -1,0 +1,73 @@
+# Local development stack: Neo4j + one-shot seeder + FastAPI.
+#
+# Usage:
+#   cp .env.example .env          # then set NEO4J_PASSWORD
+#   docker compose up --build
+#
+# Once healthy:
+#   http://localhost:8000/health  -> {"status":"ok"}
+#   http://localhost:8000/data    -> the seeded node
+#   http://localhost:7474         -> Neo4j Browser
+
+services:
+  neo4j:
+    image: neo4j:5.26
+    container_name: neo4j
+    environment:
+      NEO4J_AUTH: "${NEO4J_USER}/${NEO4J_PASSWORD}"
+      # Non-NEO4J_-prefixed vars: consumed only by the healthcheck below,
+      # so they are not interpreted as Neo4j config settings.
+      HC_USER: "${NEO4J_USER}"
+      HC_PASSWORD: "${NEO4J_PASSWORD}"
+    ports:
+      - "7474:7474"   # HTTP / Neo4j Browser
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u \"$$HC_USER\" -p \"$$HC_PASSWORD\" 'RETURN 1' >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  # One-shot job: waits for Neo4j to be healthy, seeds the node, then exits.
+  seeder:
+    build: ./app
+    image: neo4j-fastapi-api:local
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      NEO4J_URI: "${NEO4J_URI}"
+      NEO4J_USER: "${NEO4J_USER}"
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
+    volumes:
+      - ./scripts:/seed:ro
+    command: ["python", "/seed/seed_neo4j.py"]
+    restart: "no"
+
+  api:
+    build: ./app
+    image: neo4j-fastapi-api:local
+    container_name: api
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      seeder:
+        condition: service_completed_successfully
+    environment:
+      NEO4J_URI: "${NEO4J_URI}"
+      NEO4J_USER: "${NEO4J_USER}"
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  neo4j_data:
